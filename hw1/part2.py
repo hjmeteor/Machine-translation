@@ -39,11 +39,11 @@ for word in set(sum(french,())):
 # always the words from 1 to i). Field lm_state stores the language model
 # conditioning context that should be used to compute the probability of
 # the next English word in the translation.
-state = namedtuple("state", "i, lm_state")
+state = namedtuple("state", "k, j, i, e, lm_state")
 
 # generate an initial hypothesis
 def initial_state():
-  return state(i=0, lm_state=lm.begin())
+  return state(k=0, j=0, i=0, e=0, lm_state=lm.begin())
 
 # determine what stack a hypothesis should be placed in
 def assign_stack(s):
@@ -55,24 +55,56 @@ def assign_stack(s):
 # of the form (new_s, logprob, phrase), in which new_s is a new state
 # object, and the edge from s to new_s should be labeled by phrase
 # with weight logprob.
+#
 def extend_state(s, f):
-  for j in xrange(s.i+1,len(f)+1):
-    if f[s.i:j] in tm:
-      for phrase in tm[f[s.i:j]]:
-        # edge weight includes p_TM
-        logprob = phrase.logprob
+    if s.k == s.j:
+        for i in xrange(s.e+1, len(f)+1):
+            if f[s.e:i] in tm:
+                for phrase in tm[f[s.e:i]]:
+                    # edge weight includes p_TM
+                    logprob = phrase.logprob
+                    # add p_LM probabilities for every word in phrase.english
+                    lm_state = s.lm_state
+                    for word in phrase.english.split():
+                        (lm_state, word_logprob) = lm.score(lm_state, word)
+                        logprob += word_logprob
+                    # special case: end of sentence
+                    logprob += lm.end(lm_state) if i == len(f) else 0.0
 
-        # add p_LM probabilities for every word in phrase.english
-        lm_state = s.lm_state
-        for word in phrase.english.split():
-          (lm_state, word_logprob) = lm.score(lm_state, word)
-          logprob += word_logprob
-        # special case: end of sentence
-        logprob += lm.end(lm_state) if j == len(f) else 0.0
+                    # finally, return the new hypothesis
+                    new_s = state(0, 0, i, i, lm_state)
+                    yield (new_s, logprob, phrase)
+                for n in xrange(i+1,len(f)+1):
+                    if f[i:n] in tm:
+                        for phrase in tm[f[i:n]]:
+                            # edge weight includes p_TM
+                            logprob = phrase.logprob
+                            # add p_LM probabilities for every word in phrase.english
+                            lm_state = s.lm_state
+                            for word in phrase.english.split():
+                                (lm_state, word_logprob) = lm.score(lm_state, word)
+                                logprob += word_logprob
+                            # special case: end of sentence
+                            logprob += lm.end(lm_state) if n == len(f) else 0.0
 
-        # finally, return the new hypothesis
-        new_s = state(j, lm_state)
-        yield (new_s, logprob, phrase)
+                            # finally, return the new hypothesis
+                            new_s = state(s.e, i, n - i + s.e, n, lm_state)
+                            yield (new_s, logprob, phrase)
+
+    else:
+        for phrase in tm[f[s.k:s.j]]:
+            # edge weight includes p_TM
+            logprob = phrase.logprob
+            # add p_LM probabilities for every word in phrase.english
+            lm_state = s.lm_state
+            for word in phrase.english.split():
+                (lm_state, word_logprob) = lm.score(lm_state, word)
+                logprob += word_logprob
+            # special case: end of sentence
+            logprob += lm.end(lm_state) if s.j == len(f) else 0.0
+            # finally, return the new hypothesis
+            new_s = state(0, 0, s.e, s.e, lm_state)
+            yield (new_s, logprob, phrase)
 
 ########################################################################
 # End of functions requiring modification
