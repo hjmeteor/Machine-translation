@@ -5,67 +5,25 @@ import models
 from collections import namedtuple
 
 optparser = optparse.OptionParser()
-optparser.add_option(
-    "-i",
-    "--input",
-    dest="input",
-    default="data/input",
-    help="File containing sentences to translate (default=data/input)")
-optparser.add_option(
-    "-t",
-    "--translation-model",
-    dest="tm",
-    default="data/tm",
-    help="File containing translation model (default=data/tm)")
-optparser.add_option(
-    "-l",
-    "--language-model",
-    dest="lm",
-    default="data/lm",
-    help="File containing ARPA-format language model (default=data/lm)")
-optparser.add_option(
-    "-n",
-    "--num_sentences",
-    dest="num_sents",
-    default=sys.maxint,
-    type="int",
-    help="Number of sentences to decode (default=no limit)")
-optparser.add_option(
-    "-k",
-    "--translations-per-phrase",
-    dest="k",
-    default=1,
-    type="int",
-    help="Limit on number of translations to consider per phrase (default=1)")
-optparser.add_option(
-    "-s",
-    "--stack-size",
-    dest="s",
-    default=1,
-    type="int",
-    help="Maximum stack size (default=1)")
-optparser.add_option(
-    "-v",
-    "--verbose",
-    dest="verbose",
-    action="store_true",
-    default=False,
-    help="Verbose mode (default=off)")
+optparser.add_option("-i", "--input", dest="input", default="data/input", help="File containing sentences to translate (default=data/input)")
+optparser.add_option("-t", "--translation-model", dest="tm", default="data/tm", help="File containing translation model (default=data/tm)")
+optparser.add_option("-l", "--language-model", dest="lm", default="data/lm", help="File containing ARPA-format language model (default=data/lm)")
+optparser.add_option("-n", "--num_sentences", dest="num_sents", default=sys.maxint, type="int", help="Number of sentences to decode (default=no limit)")
+optparser.add_option("-k", "--translations-per-phrase", dest="k", default=1, type="int", help="Limit on number of translations to consider per phrase (default=1)")
+optparser.add_option("-s", "--stack-size", dest="s", default=1, type="int", help="Maximum stack size (default=1)")
+optparser.add_option("-v", "--verbose", dest="verbose", action="store_true", default=False,  help="Verbose mode (default=off)")
 opts = optparser.parse_args()[0]
 
 tm = models.TM(opts.tm, opts.k)
 lm = models.LM(opts.lm)
-french = [
-    tuple(line.strip().split())
-    for line in open(opts.input).readlines()[:opts.num_sents]
-]
+french = [tuple(line.strip().split()) for line in open(opts.input).readlines()[:opts.num_sents]]
 
 # tm should translate unknown tokens by copying them to the output with
 # probability 1. This is a sensible strategy when translating between
 # languages in Latin script since unknown tokens are often names or numbers.
-for word in set(sum(french, ())):
-    if (word, ) not in tm:
-        tm[(word, )] = [models.phrase(word, 0.0)]
+for word in set(sum(french,())):
+  if (word,) not in tm:
+    tm[(word,)] = [models.phrase(word, 0.0)]
 
 ########################################################################
 # To alter the underlying dynamic program of the decoder, you need only
@@ -81,6 +39,10 @@ for word in set(sum(french, ())):
 # always the words from 1 to i). Field lm_state stores the language model
 # conditioning context that should be used to compute the probability of
 # the next English word in the translation.
+
+# re-define the state and add three attribute k,j,e. k to j define a gap
+# in the sentence and e is the last location of word which has been
+# translated. If there is no gap, k,j will be the same
 state = namedtuple("state", "k, j, i, e, lm_state")
 
 
@@ -102,9 +64,12 @@ def assign_stack(s):
 # with weight logprob.
 #
 def extend_state(s, f):
+    #If there is not a gap, program will extend a similar partial translation
+    #or chose to translate a phrase from j + 1 to i, skipping the phrase from k to j.
     if s.k == s.j:
         for i in xrange(s.e + 1, len(f) + 1):
             if f[s.e:i] in tm:
+                # extending a similar partial translation
                 for phrase in tm[f[s.e:i]]:
                     # edge weight includes p_TM
                     logprob = phrase.logprob
@@ -119,6 +84,9 @@ def extend_state(s, f):
                     # finally, return the new hypothesis
                     new_s = state(0, 0, i, i, lm_state)
                     yield (new_s, logprob, phrase)
+
+                # chosing to translate a phrase from j + 1 to i, skipping the
+                # phrase from k to j.
                 for n in xrange(i + 1, len(f) + 1):
                     if f[i:n] in tm:
                         for phrase in tm[f[i:n]]:
@@ -137,6 +105,7 @@ def extend_state(s, f):
                             new_s = state(s.e, i, n - i + s.e, n, lm_state)
                             yield (new_s, logprob, phrase)
 
+    # fill in a gap in the set of translated k to j words
     else:
         for phrase in tm[f[s.k:s.j]]:
             # edge weight includes p_TM
@@ -163,47 +132,34 @@ def extend_state(s, f):
 # translations of exactly i source words (though they can be any words).
 # It shouldn't be necessary to modify this code if you are only
 # changing the dynamic program, but you should understand how it works.
-sys.stderr.write("Decoding %s...\n" % (opts.input, ))
+sys.stderr.write("Decoding %s...\n" % (opts.input,))
 for f in french:
-    # a hypothesis is a node in the decoding search graph. It is parameterized
-    # by a state object, defined above.
-    hypothesis = namedtuple("hypothesis",
-                            "logprob, predecessor, phrase, state")
+  # a hypothesis is a node in the decoding search graph. It is parameterized
+  # by a state object, defined above.
+  hypothesis = namedtuple("hypothesis", "logprob, predecessor, phrase, state")
 
-    # create stacks and add initial state
-    stacks = [{} for _ in f] + [{}
-                                ]  # add stack for case of no words are covered
-    stacks[0][initial_state()] = hypothesis(0.0, None, None, initial_state())
-    for stack in stacks[:-1]:
-        for h in sorted(
-                stack.itervalues(),
-                key=lambda h: -h.logprob)[:opts.s]:  # prune
-            for (new_state, logprob, phrase) in extend_state(h.state, f):
-                new_h = hypothesis(
-                    logprob=h.logprob + logprob,
-                    predecessor=h,
-                    phrase=phrase,
-                    state=new_state)
-                j = assign_stack(new_state)
-                if new_state not in stacks[j] or stacks[j][
-                        new_state].logprob < new_h.logprob:  # second case is recombination
-                    stacks[j][new_state] = new_h
-    winner = max(stacks[-1].itervalues(), key=lambda h: h.logprob)
+  # create stacks and add initial state
+  stacks = [{} for _ in f] + [{}] # add stack for case of no words are covered
+  stacks[0][initial_state()] = hypothesis(0.0, None, None, initial_state())
+  for stack in stacks[:-1]:
+    for h in sorted(stack.itervalues(),key=lambda h: -h.logprob)[:opts.s]: # prune
+      for (new_state, logprob, phrase) in extend_state(h.state, f):
+        new_h = hypothesis(logprob=h.logprob + logprob,
+                           predecessor=h,
+                           phrase=phrase,
+                           state=new_state)
+        j = assign_stack(new_state)
+        if new_state not in stacks[j] or stacks[j][new_state].logprob < new_h.logprob: # second case is recombination
+          stacks[j][new_state] = new_h
+  winner = max(stacks[-1].itervalues(), key=lambda h: h.logprob)
+  def extract_english(h):
+    return "" if h.predecessor is None else "%s%s " % (extract_english(h.predecessor), h.phrase.english)
+  print extract_english(winner)
 
-    def extract_english(h):
-        return "" if h.predecessor is None else "%s%s " % (
-            extract_english(h.predecessor), h.phrase.english)
-
-    print extract_english(winner)
-
-    # optionally report (Viterbi) log probability of best hypothesis
-    if opts.verbose:
-
-        def extract_tm_logprob(h):
-            return 0.0 if h.predecessor is None else h.phrase.logprob + extract_tm_logprob(
-                h.predecessor)
-
-        tm_logprob = extract_tm_logprob(winner)
-        sys.stderr.write(
-            "LM = %f, TM = %f, Total = %f\n" %
-            (winner.logprob - tm_logprob, tm_logprob, winner.logprob))
+  # optionally report (Viterbi) log probability of best hypothesis
+  if opts.verbose:
+    def extract_tm_logprob(h):
+      return 0.0 if h.predecessor is None else h.phrase.logprob + extract_tm_logprob(h.predecessor)
+    tm_logprob = extract_tm_logprob(winner)
+    sys.stderr.write("LM = %f, TM = %f, Total = %f\n" %
+      (winner.logprob - tm_logprob, tm_logprob, winner.logprob))

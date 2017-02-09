@@ -57,9 +57,12 @@ def assign_stack(s):
 # with weight logprob.
 #
 def extend_state(s, f):
+    #If there is not a gap, program will extend a similar partial translation
+    #or chose to translate a phrase from j + 1 to i, skipping the phrase from k to j.
     if s.k == s.j:
         for i in xrange(s.e+1, len(f)+1):
             if f[s.e:i] in tm:
+                # extending a similar partial translation
                 for phrase in tm[f[s.e:i]]:
                     # edge weight includes p_TM
                     logprob = phrase.logprob
@@ -74,6 +77,8 @@ def extend_state(s, f):
                     # finally, return the new hypothesis
                     new_s = state(0, 0, i, i, lm_state)
                     yield (new_s, logprob, phrase)
+                # chosing to translate a phrase from j + 1 to i, skipping the
+                # phrase from k to j.
                 for n in xrange(i+1,len(f)+1):
                     if f[i:n] in tm:
                         for phrase in tm[f[i:n]]:
@@ -91,10 +96,12 @@ def extend_state(s, f):
                             new_s = state(s.e, i, n - i + s.e, n, lm_state)
                             yield (new_s, logprob, phrase)
 
-
+    # Filling in a gap in the set of translated k to j words or extending
+    # a similar partial translation.
     else:
         for i in xrange(s.e+1, len(f)+1):
             if f[s.e:i] in tm:
+
                 for phrase in tm[f[s.e:i]]:
                     # edge weight includes p_TM
                     logprob = phrase.logprob
