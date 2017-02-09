@@ -1,0 +1,117 @@
+\documentclass[answers]{exam}
+
+%% Language and font encodings
+\usepackage[english]{babel}
+\usepackage[utf8x]{inputenc}
+\usepackage[T1]{fontenc}
+
+%% Sets page size and margins
+\usepackage[a4paper,margin=2cm]{geometry}
+
+%% Useful packages
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{paralist}
+\setlength\FrameSep{4pt}
+
+\begin{document}
+\begin{questions}
+\question[10]{Experiment with stack pruning parameters. What is their affect on...}
+\begin{framed}
+\begin{compactenum}[a.]
+\item log-probabilities: As the values of the maximum stack size (-s) and translations-per-phrase (-k) grow from 1, the value of log-probabilities grows larger. However, the value of log-probabilities is maximized and does not change anymore after the value of -s and the value of -k grow to a certain value.
+\item speed: As the maximum stack size (-s) and translations-per-phrase (-k) start to increase from 1, the speed is slowing down.
+\item translations: As the maximum stack size (-s) and translations-per-phrase (-k) grow from 1, the translation results get better. The results of translations(using larger values of -s, -k) have changed, these results make more sense, also become more fluent. For example, the worse translation result: they stand the same when their leaders stand to them; and the better one: they stand out when their leaders stand to them.(s=6, k=5 and s=100, k =100)
+\item maximum log-probability: -1353.247828.
+\end{compactenum}
+\end{framed}
+
+
+\question[15]{Define a new dynamic program for Part 2.}
+\begin{framed}
+ To get the best partial translation of the first $i$ French words ending in English word $e$. There are two ways to this situation:\\
+ 1.By extending a similar partial translation covering a shorter prefix.
+\begin{eqnarray}
+h(i,e) = \arg\max_{h(j,e')e_1 \ldots e_ne} \log p(h(j,e')) + \log p_{TM}(f_{j+1} \ldots f_i \,|\,  e_1 \ldots e_ne) + \\ \log p_{LM}(e_1\,|\,e')+\sum_{n'=1}^{n-1}\log p_{LM}(e_{n'+1}\,|\,e_{n'}) + \log p_{LM}(e\,|\,e_n)
+\end{eqnarray}
+ 2.By filling in a gap in the set of translated words that was created by translating the second in pair of phrases first.
+\begin{eqnarray}
+h(i,e) = \arg\max_{s(k,j,i,e')e_1 \ldots e_ne} \log p(s(k,j,i,e')) + \log p_{TM}(f_{k} \ldots f_j \,|\,  e_1 \ldots e_ne) + \\ \log p_{LM}(e_1\,|\,e')+\sum_{n'=1}^{n-1}\log p_{LM}(e_{n'+1}\,|\,e_{n'}) + \log p_{LM}(e\,|\,e_n)
+\end{eqnarray}
+ There is a partial translation that covers the first $i$ words of the French, except those from $k$ to $j$. This case is the antecedent of $2.$ above. So the best possible translation of these words, ending in $e$, as follows:
+\begin{eqnarray}
+s(k,j,i,e) = \arg\max_{h(k-1,e')e_1 \ldots e_ne} \log p(h(k-1,e')) + \log p_{TM}(f_{j+1} \ldots f_i \,|\,  e_1 \ldots e_ne) + \\ \log p_{LM}(e_1\,|\,e')+\sum_{n'=1}^{n-1}\log p_{LM}(e_{n'+1}\,|\,e_{n'}) + \log p_{LM}(e\,|\,e_n)
+\end{eqnarray}
+The dynamic program operation flow is as follows: 1.If there is not a gap, program will extend a similar partial translation or chose to translate a phrase from $j+1$ to $i$, skipping the phrase from $k$ to $j$. 2.IF there is a gap, program will fill in a gap in the set of translated $k$ to $j$ words. 3.The program repeat the operation 1,2 above.
+\end{framed}
+
+
+\question[5]{What is the complexity of your Part 2 decoder? Explain your reasoning.}
+\begin{framed}
+ Its time complexity is calculated as follows:
+\begin{eqnarray}
+\mathcal{O}(max\:stack\:size \ast translation\:options \ast phrases\:length)
+\end{eqnarray}
+ We can get the value of the max stack size is $s$, and the sentence length is $I$. And we can get the translation option through a double loop. So the time complexity of translation option is $I^2$.\\
+ 1.If phrases can be arbitrarily long,
+the complexity is shown as $O(sI^{2}kI)$ \\
+ 2.So if phrases have a maximum length $K$, the complexity is shown as $O(sK^{2}kI)$
+\end{framed}
+
+
+\question[5]{What is the mapping from hypothesis objects to stacks for Part 2?}
+\begin{framed}
+ There are two situations of mapping these. \\
+ 1.If there is a gap in the hypothesis object, there are translations of exactly $i - (j - k)$ words(There are $i$ words have been already translated except the $(j - k)$ words in gap). So they will be placed on the stack  $i - (j - k)$ .\\
+ 2. If there is no gap. the translation of exactly $i$ words will be placed on the stack $i$.
+\end{framed}
+\addtocounter{question}{1}
+\question[15] Experiment with stack pruning parameters for Part 2. What is their affect on...
+\begin{framed}
+\begin{compactenum}[a.]
+\item log-probabilities: As the values of the maximum stack size (-s) and translations-per-phrase (-k) grow from 1, the value of log-probabilities grows larger. And there is an maximized log-probabilities after after the value of -s and the value of -k grow to a certain value. However, there is a special case, when the value of-s is small, and the value of k is very large, it may make the program shut down or error.
+\item speed: As the maximum stack size (-s) and translations-per-phrase (-k) start to increase from 1, the speed is slowing down.
+\item translations: As the maximum stack size (-s) and translations-per-phrase (-k) grow from 1, the translation results get better. The results of translations(using larger values of -s, -k) have changed, these results make more sense, also become more fluent. For example, yesterday I attended the first to the meeting in committee; yesterday I attended on the first meeting of the committee.(s=10,k=50 and s=100,k=100)
+\item maximum log-probability: -1300.526262
+\end{compactenum}
+\end{framed}
+
+
+\question[10]{Define a new dynamic program for Part 3.}
+\begin{framed}
+ To get the best partial translation of the first $i$ French words ending in English word $e$. There are three ways to this situation:\\
+The first two methods are the same as dynamic program of part2.
+The third method is shown below.
+\begin{eqnarray}
+s(k,j,i,e) = \arg\max_{s(k,j,i',e')e_1 \ldots e_ne} \log p(s(k,j,i',e')) + \log p_{TM}(f_{i'} \ldots f_i \,|\,  e_1 \ldots e_ne) + \\ \log p_{LM}(e_1\,|\,e')+\sum_{n'=1}^{n-1}\log p_{LM}(e_{n'+1}\,|\,e_{n'}) + \log p_{LM}(e\,|\,e_n)
+\end{eqnarray}
+The dynamic program operation flow is almost the same as part2, except there is a difference in operation 2. If there is a gap, program will fill in a gap in the set of translated $k$ to $j$ words or program will extend a similar partial translation.
+\end{framed}
+\question[5]{What is the computational complexity of your Part 3 decoder?}
+\begin{framed}
+ Its time complexity is calculated as follows: (O)(max stack size * translation options * phrases length).
+ We can get the value of the max stack size is $s$, and the sentence length is $I$. And we can get the translation option through a double loop. So the time complexity of translation option is $I^2$.\\
+ 1.If phrases can be arbitrarily long,
+the complexity is shown as $O(sI^{2}kI)$ \\
+ 2.So if phrases have a maximum length $K$, the complexity is shown as $O(sK^{2}kI)$
+\end{framed}
+
+
+\question[5]{What is the mapping from hypothesis objects to stacks for Part 3?}
+\begin{framed}
+ There are two situations of mapping these. \\
+ 1.If there is a gap in the hypothesis object, there are translations of exactly $i - (j - k)$ words(There are $i$ words have been already translated except the $(j - k)$ words in gap). So they will be placed on the stack  $i - (j - k)$ .\\
+ 2. If there is no gap. the translation of exactly $i$ words will be placed on the stack $i$.
+\end{framed}
+
+
+\addtocounter{question}{1}
+\question[5]{What is the maximum log-probability your Part 3 decoder can obtain? What do you conclude?}
+\begin{framed}
+ The maximum log-probability of my part3 decoder I can obtain is -1278.680068.\\
+ Reordering can improve the maximum log-probability and the quality of the translation.Beyond local reordering performance better than local reordering, but the speed is slower too.
+
+\end{framed}
+\end{questions}
+
+\end{document}
