@@ -49,10 +49,16 @@ class EncoderDecoder(Chain):
 
         '''
         ___QUESTION-1-DESCRIBE-A-START___
-
         - Explain the following lines of code
         - Think about what add_link() does and how can we access Links added in Chainer.
         - Why are there two loops or adding links?
+        - Explain the following lines of code
+
+        1. Add the encoder of a bidirectional LSTM layer and add link on each LSTM layer.
+        2. add_link() define the L.LSTM(n_units, n_units) as a child link. And it is
+           named as "lstm_name". We could access Links added in Chainer by using their names("lstm_name").
+        3. Because this is a bidrectional LSTM. So there is two lstm encoder layers.
+           One is "self.lstm_enc" and another is "self.lstm_rev_enc".So we should add link respectively.
         '''
         self.lstm_enc = ["L{0:d}_enc".format(i) for i in range(nlayers_enc)]
         for lstm_name in self.lstm_enc:
@@ -75,8 +81,16 @@ class EncoderDecoder(Chain):
         - L.EmbedID(vsize_dec, 2*n_units)
         - L.LSTM(2*n_units, 2*n_units)
         - L.Linear(2*n_units, vsize_dec)
+        L.EmbedID(vsize_dec, 2*n_units) Input = output of encoder, output = input of L.LSTM layer
+        L.LSTM(2*n_units, 2*n_units) Input size or output size is different from encoder.
+        L.Linear(2*n_units, vsize_dec) Input = size of LSTM units. output = vocabulary size of target language.
 
         Why are we using multipliers over the base number of units (n_units)?
+
+        Because we use this bidirectional LSTM, which can produce a translation of a source
+        word according to the other words around it. So we have two lstm layer in encoder and each of them has n hidden units.
+        And this is a two-way encoder. So we need to transfer the states of the last lstm layer of encoder to the first lstm layer of decoder.
+        So the hidden units in decoder needs to be multiplied by 2.
         '''
 
         self.add_link("embed_dec", L.EmbedID(vsize_dec, 2*n_units))
@@ -88,7 +102,7 @@ class EncoderDecoder(Chain):
 
         if attn > 0:
             # __QUESTION Add attention
-            pass
+            self.add_link("att", L.Linear(4*n_units,2*n_units))
 
         # Save the attention preference
         # __QUESTION you should use this flag to check if attention
@@ -113,8 +127,15 @@ class EncoderDecoder(Chain):
 
     '''
         ___QUESTION-1-DESCRIBE-C-START___
-
         Describe what the function set_decoder_state() is doing. What are c_state and h_state?
+
+        1. The set_decoder_state() concatenate c_state of both forward LSTM and backward LSTM.
+        And concatenate h_state of both forward LSTM and backward LSTM. Then transfer the oucome frome encoder to decoder.
+        It initialize decoder LSTM by using final encoder state.
+        2. c_state is the initial state of units in the first layer (self.lstm_dec[0]) of decoder. Cell states
+        of LSTM units is affected by all the previous information or states.
+        h_state is the initial the output of units in the first layer (self.lstm_dec[0]) of decoder in
+        previous time step
     '''
     def set_decoder_state(self):
         xp = cuda.cupy if self.gpuid >= 0 else np
@@ -148,7 +169,6 @@ class EncoderDecoder(Chain):
         self.feed_lstm(word, self.embed_dec, self.lstm_dec, train)
 
     '''
-
     '''
     def encode_list(self, in_word_list, train=True):
         xp = cuda.cupy if self.gpuid >= 0 else np
@@ -167,8 +187,8 @@ class EncoderDecoder(Chain):
         for f_word, r_word in zip(var_en, var_rev_en):
             '''
             ___QUESTION-1-DESCRIBE-D-START___
-
             - Explain why we are performing two encode operations
+            Because it is  a bidirectional LSTM, we need to do two encode operations for each way.
             '''
             self.encode(f_word, self.lstm_enc, train)
             self.encode(r_word, self.lstm_rev_enc, train)
@@ -206,9 +226,8 @@ class EncoderDecoder(Chain):
             - Add code to sample from the probability distribution to
             choose the next word
             '''
-            index = np.random.choice(range(len(prob)), p=prob.data[0])
+            indx = np.random.choice(range(len(prob)), p=prob.data[0])
             pred_word = Variable(xp.asarray([indx], dtype=np.int32), volatile=not train)
-            pass
         return pred_word
 
     def encode_decode_train(self, in_word_list, out_word_list, train=True, sample=False):
@@ -236,7 +255,14 @@ class EncoderDecoder(Chain):
                 predicted_out = self.out(self[self.lstm_dec[-1]].h)
             else:
                 # __QUESTION Add attention
-                pass
+                ht=self[self.lstm_dec[-1]].h
+                hs=enc_states
+                score=F.matmul(ht, hs, transa=False, transb=True)
+                alpha = F.softmax(score)
+                c=F.matmul(alpha,hs, transa=False, transb=False)
+                ht_=F.concat((c,ht),axis=1)
+                new_ht=F.tanh(self.att(ht_))
+                predicted_out = self.out(new_ht)
 
             # compute loss
             prob = F.softmax(predicted_out)
@@ -247,6 +273,8 @@ class EncoderDecoder(Chain):
             ___QUESTION-1-DESCRIBE-E-START___
             Explain what loss is computed with an example
             What does this value mean?
+            In every training process, the value represents the cost of the difference between the output of prediction and
+            next_word_var(reference word).
             '''
             self.loss += F.softmax_cross_entropy(predicted_out, next_word_var)
             '''___QUESTION-1-DESCRIBE-E-END___'''
@@ -276,7 +304,16 @@ class EncoderDecoder(Chain):
                 prob = F.softmax(self.out(self[self.lstm_dec[-1]].h))
             else:
                 # __QUESTION Add attention
-                pass
+                ht=self[self.lstm_dec[-1]].h
+                hs=enc_states
+                score=F.matmul(ht, hs, transa=False, transb=True)
+                alpha = F.softmax(score)
+                c=F.matmul(alpha,hs, transa=False, transb=False)
+                ht_=F.concat((c,ht),axis=1)
+                new_ht=F.tanh(self.att(ht_))
+                predicted_out = self.out(new_ht)
+                prob = F.softmax(predicted_out)
+                alpha_arr=np.concatenate((alpha_arr,alpha.data),axis=0)
 
             pred_word = self.select_word(prob, train=False, sample=sample)
             # add integer id of predicted word to output list
